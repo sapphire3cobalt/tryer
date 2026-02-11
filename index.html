@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pomodoro Studio</title>
+    <title>EU GPAI Safety Code Watch</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,139 +14,112 @@
   </head>
   <body>
     <main class="app">
-      <header class="app__header">
-        <div>
-          <p class="app__eyebrow">Pomodoro Studio</p>
-          <h1>Design your ideal study rhythm.</h1>
-          <p class="app__subtitle">
-            Blend focus sprints, breaks, tasks, and a colorful calendar so you can
-            see the full story of your day.
-          </p>
-        </div>
-        <div class="app__quick-actions">
-          <button id="startBtn" class="btn btn--primary">Start Focus Flow</button>
-          <button id="pauseBtn" class="btn" disabled>Pause</button>
-          <button id="resetBtn" class="btn btn--ghost">Reset</button>
-        </div>
+      <header class="hero card">
+        <p class="eyebrow">Independent Watchdog Platform</p>
+        <h1>EU Code of Practice – Safety & Security Compliance Tracker</h1>
+        <p>
+          Track frontier AI companies against the Safety and Security commitments for
+          GPAI models. Identify implementation gaps, monitor systemic-risk mitigation,
+          and produce evidence-ready outputs for EU AI Office oversight.
+        </p>
       </header>
 
-      <section class="grid">
-        <section class="card timer">
-          <div class="timer__header">
-            <div>
-              <p class="label">Now playing</p>
-              <h2 id="currentSessionTitle">Ready to focus</h2>
-            </div>
-            <span id="sessionBadge" class="badge badge--neutral">Idle</span>
-          </div>
-          <div class="timer__display">
-            <div class="timer__ring" id="timerRing">
-              <div class="timer__time" id="timeRemaining">25:00</div>
-              <div class="timer__meta" id="sessionMeta">0 of 0 pomodoros</div>
-            </div>
-            <div class="timer__controls">
-              <label class="toggle">
-                <input type="checkbox" id="autoStartToggle" checked />
-                Auto-start next session
-              </label>
-              <label class="toggle">
-                <input type="checkbox" id="soundToggle" checked />
-                Alert sounds on
-              </label>
-            </div>
-          </div>
-          <div class="timer__progress">
-            <div>
-              <p class="label">Up next</p>
-              <p id="nextSession">Configure a flow to get started</p>
-            </div>
-            <div>
-              <p class="label">Today completed</p>
-              <p id="completedCount">0 sessions</p>
-            </div>
-          </div>
-        </section>
+      <section class="kpis" id="kpis"></section>
 
-        <section class="card" aria-label="Pomodoro settings">
-          <h2>Focus Flow builder</h2>
-          <p class="card__subtitle">
-            Mix and match durations to match your energy level. These settings
-            also generate a calendar preview.
-          </p>
-          <form id="settingsForm" class="settings">
+      <section class="toolbar card">
+        <div class="toolbar__group">
+          <label>
+            Company
+            <select id="companyFilter"></select>
+          </label>
+          <label>
+            Status
+            <select id="statusFilter">
+              <option value="all">All statuses</option>
+            </select>
+          </label>
+          <label>
+            Commitment ID
+            <input id="commitmentFilter" type="text" placeholder="e.g., 3.4" />
+          </label>
+        </div>
+        <div class="toolbar__group actions">
+          <button id="exportBtn" class="btn">Export JSON</button>
+          <label class="btn btn--ghost" for="importInput">Import JSON</label>
+          <input id="importInput" type="file" accept="application/json" hidden />
+          <button id="resetBtn" class="btn btn--danger">Reset dataset</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-header">
+          <h2>Commitment-by-Company Assessment Matrix</h2>
+          <p>Click any status cell to update compliance. Scores update immediately.</p>
+        </div>
+        <div class="matrix-wrap">
+          <table class="matrix" id="matrixTable"></table>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <section class="card">
+          <div class="section-header">
+            <h2>Gap Analysis Workbench</h2>
+            <p>Document key implementation gaps for each commitment.</p>
+          </div>
+          <form id="gapForm" class="form-grid">
             <label>
-              Pomodoros per cycle
-              <input type="number" id="pomodoroCount" min="1" max="12" value="4" />
+              Company
+              <select id="detailCompany"></select>
             </label>
             <label>
-              Focus duration (minutes)
-              <input type="number" id="focusDuration" min="10" max="90" value="25" />
+              Commitment
+              <select id="detailCommitment"></select>
             </label>
             <label>
-              Short break (minutes)
-              <input type="number" id="shortBreak" min="3" max="30" value="5" />
+              Severity (0–5)
+              <input id="severity" type="number" min="0" max="5" step="1" value="0" />
             </label>
             <label>
-              Long break (minutes)
-              <input type="number" id="longBreak" min="10" max="60" value="15" />
+              Probability (0–5)
+              <input id="probability" type="number" min="0" max="5" step="1" value="0" />
             </label>
-            <label>
-              Long break after # pomodoros
-              <input type="number" id="longBreakInterval" min="2" max="8" value="4" />
-            </label>
-            <label>
-              Daily intention
+            <label class="full-row">
+              Evidence / public source
               <input
+                id="evidence"
                 type="text"
-                id="sessionIntent"
-                placeholder="Write a focus intention"
+                placeholder="Policy page, model card, audit report, etc."
               />
             </label>
-            <div class="settings__actions">
-              <button class="btn btn--primary" type="submit">Build Flow</button>
-              <button class="btn btn--ghost" type="button" id="savePresetBtn">
-                Save preset
-              </button>
+            <label class="full-row">
+              Gap narrative
+              <textarea
+                id="gapNotes"
+                rows="5"
+                placeholder="What is missing compared to the commitment?"
+              ></textarea>
+            </label>
+            <label class="full-row">
+              Recommended watchdog action
+              <textarea
+                id="nextActions"
+                rows="4"
+                placeholder="What should the company or regulator require next?"
+              ></textarea>
+            </label>
+            <div class="full-row actions">
+              <button type="submit" class="btn">Save gap note</button>
             </div>
           </form>
-          <div id="presetContainer" class="preset"></div>
         </section>
 
-        <section class="card tasks">
-          <h2>To-do list</h2>
-          <p class="card__subtitle">
-            Capture tasks for each session and check them off as you go.
-          </p>
-          <form id="taskForm" class="tasks__form">
-            <input
-              type="text"
-              id="taskInput"
-              placeholder="Add a task for this focus flow"
-              required
-            />
-            <button class="btn btn--primary" type="submit">Add</button>
-          </form>
-          <ul id="taskList" class="tasks__list"></ul>
-        </section>
-
-        <section class="card calendar">
-          <div class="calendar__header">
-            <div>
-              <h2>Focus calendar</h2>
-              <p class="card__subtitle">
-                A colorful timeline of your upcoming focus flow and completed
-                sessions.
-              </p>
-            </div>
-            <div class="calendar__actions">
-              <button id="exportJsonBtn" class="btn btn--ghost">Export JSON</button>
-              <button id="exportCsvBtn" class="btn btn--ghost">Export CSV</button>
-              <button id="clearHistoryBtn" class="btn btn--ghost">
-                Clear history
-              </button>
-            </div>
+        <section class="card">
+          <div class="section-header">
+            <h2>Priority Alerts</h2>
+            <p>Automatically highlights high-risk unresolved gaps.</p>
           </div>
-          <div class="calendar__grid" id="calendarGrid"></div>
+          <ul id="alerts" class="alerts"></ul>
         </section>
       </section>
     </main>

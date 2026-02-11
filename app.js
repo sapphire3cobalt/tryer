@@ -1,574 +1,343 @@
-const timerRing = document.getElementById("timerRing");
-const timeRemaining = document.getElementById("timeRemaining");
-const currentSessionTitle = document.getElementById("currentSessionTitle");
-const sessionBadge = document.getElementById("sessionBadge");
-const sessionMeta = document.getElementById("sessionMeta");
-const nextSession = document.getElementById("nextSession");
-const completedCount = document.getElementById("completedCount");
+const STORAGE_KEY = "eu_cop_watchdog_v1";
 
-const settingsForm = document.getElementById("settingsForm");
-const pomodoroCount = document.getElementById("pomodoroCount");
-const focusDuration = document.getElementById("focusDuration");
-const shortBreak = document.getElementById("shortBreak");
-const longBreak = document.getElementById("longBreak");
-const longBreakInterval = document.getElementById("longBreakInterval");
-const sessionIntent = document.getElementById("sessionIntent");
-const savePresetBtn = document.getElementById("savePresetBtn");
-const presetContainer = document.getElementById("presetContainer");
+const companies = [
+  "OpenAI",
+  "Anthropic",
+  "Google DeepMind",
+  "Meta",
+  "xAI",
+  "Mistral",
+];
 
-const startBtn = document.getElementById("startBtn");
-const pauseBtn = document.getElementById("pauseBtn");
-const resetBtn = document.getElementById("resetBtn");
-const autoStartToggle = document.getElementById("autoStartToggle");
-const soundToggle = document.getElementById("soundToggle");
+const commitments = [
+  {
+    id: "3.1",
+    title: "Maintain a documented systemic-risk governance framework.",
+  },
+  {
+    id: "3.2",
+    title: "Define and test clear risk thresholds for severe misuse and loss-of-control scenarios.",
+  },
+  {
+    id: "3.3",
+    title: "Conduct pre-deployment evaluations including adversarial stress testing.",
+  },
+  {
+    id: "3.4",
+    title: "Use state-of-the-art risk estimation methods for probability and severity of systemic risks.",
+  },
+  {
+    id: "3.5",
+    title: "Implement robust post-deployment monitoring and incident reporting channels.",
+  },
+  {
+    id: "3.6",
+    title: "Apply proportionate cybersecurity controls and model-weight protection.",
+  },
+  {
+    id: "3.7",
+    title: "Maintain secure disclosure and coordinated vulnerability handling processes.",
+  },
+  {
+    id: "3.8",
+    title: "Commit to independent review, documentation transparency, and regulator cooperation.",
+  },
+];
 
-const taskForm = document.getElementById("taskForm");
-const taskInput = document.getElementById("taskInput");
-const taskList = document.getElementById("taskList");
+const statuses = [
+  { value: "not_assessed", label: "Not assessed", score: 0 },
+  { value: "non_compliant", label: "Non-compliant", score: 0 },
+  { value: "partial", label: "Partial", score: 0.4 },
+  { value: "substantial", label: "Substantial", score: 0.75 },
+  { value: "compliant", label: "Compliant", score: 1 },
+];
 
-const calendarGrid = document.getElementById("calendarGrid");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportCsvBtn = document.getElementById("exportCsvBtn");
-const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+const statusLookup = Object.fromEntries(statuses.map((s) => [s.value, s]));
+const allPairs = commitments.flatMap((c) => companies.map((company) => ({ id: c.id, company })));
 
-const STORAGE_KEYS = {
-  sessions: "pomodoro_sessions",
-  settings: "pomodoro_settings",
-  tasks: "pomodoro_tasks",
-  presets: "pomodoro_presets",
+const state = loadState();
+
+const nodes = {
+  kpis: document.getElementById("kpis"),
+  companyFilter: document.getElementById("companyFilter"),
+  statusFilter: document.getElementById("statusFilter"),
+  commitmentFilter: document.getElementById("commitmentFilter"),
+  matrixTable: document.getElementById("matrixTable"),
+  detailCompany: document.getElementById("detailCompany"),
+  detailCommitment: document.getElementById("detailCommitment"),
+  severity: document.getElementById("severity"),
+  probability: document.getElementById("probability"),
+  evidence: document.getElementById("evidence"),
+  gapNotes: document.getElementById("gapNotes"),
+  nextActions: document.getElementById("nextActions"),
+  gapForm: document.getElementById("gapForm"),
+  alerts: document.getElementById("alerts"),
+  exportBtn: document.getElementById("exportBtn"),
+  importInput: document.getElementById("importInput"),
+  resetBtn: document.getElementById("resetBtn"),
 };
 
-let sessions = [];
-let activeIndex = 0;
-let remainingSeconds = 0;
-let timerId = null;
-let isPaused = true;
-
-const COLORS = {
-  focus: "var(--primary)",
-  "short-break": "var(--green)",
-  "long-break": "var(--blue)",
-};
-
-const defaultSettings = {
-  pomodoros: 4,
-  focusMinutes: 25,
-  shortBreakMinutes: 5,
-  longBreakMinutes: 15,
-  longBreakInterval: 4,
-  intention: "",
-};
-
-const loadStorage = (key, fallback) => {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
-  } catch (error) {
-    return fallback;
-  }
-};
-
-const saveStorage = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
-const formatTime = (totalSeconds) => {
-  const minutes = Math.floor(totalSeconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = Math.floor(totalSeconds % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${minutes}:${seconds}`;
-};
-
-const formatClock = (date) =>
-  date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-const formatDate = (date) =>
-  date.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-
-const buildFlow = (settings, startTime = new Date()) => {
-  const flow = [];
-  let current = new Date(startTime);
-  for (let i = 1; i <= settings.pomodoros; i += 1) {
-    const focusStart = new Date(current);
-    const focusEnd = new Date(
-      current.getTime() + settings.focusMinutes * 60 * 1000
-    );
-    flow.push({
-      id: crypto.randomUUID(),
-      type: "focus",
-      title: `Focus ${i}`,
-      start: focusStart.toISOString(),
-      end: focusEnd.toISOString(),
-      status: "planned",
-      cycle: i,
-      intention: settings.intention,
-    });
-    current = new Date(focusEnd);
-
-    if (i === settings.pomodoros) {
-      continue;
-    }
-
-    const isLongBreak = i % settings.longBreakInterval === 0;
-    const breakMinutes = isLongBreak
-      ? settings.longBreakMinutes
-      : settings.shortBreakMinutes;
-    const breakType = isLongBreak ? "long-break" : "short-break";
-    const breakStart = new Date(current);
-    const breakEnd = new Date(current.getTime() + breakMinutes * 60 * 1000);
-    flow.push({
-      id: crypto.randomUUID(),
-      type: breakType,
-      title: isLongBreak ? "Long break" : "Short break",
-      start: breakStart.toISOString(),
-      end: breakEnd.toISOString(),
-      status: "planned",
-      cycle: i,
-      intention: settings.intention,
-    });
-    current = new Date(breakEnd);
-  }
-  return flow;
-};
-
-const getSettings = () => {
-  return {
-    pomodoros: Number(pomodoroCount.value),
-    focusMinutes: Number(focusDuration.value),
-    shortBreakMinutes: Number(shortBreak.value),
-    longBreakMinutes: Number(longBreak.value),
-    longBreakInterval: Number(longBreakInterval.value),
-    intention: sessionIntent.value.trim(),
+function loadState() {
+  const base = {
+    ratings: Object.fromEntries(allPairs.map((p) => [`${p.company}|${p.id}`, "not_assessed"])),
+    notes: {},
   };
-};
 
-const applySettings = (settings) => {
-  pomodoroCount.value = settings.pomodoros;
-  focusDuration.value = settings.focusMinutes;
-  shortBreak.value = settings.shortBreakMinutes;
-  longBreak.value = settings.longBreakMinutes;
-  longBreakInterval.value = settings.longBreakInterval;
-  sessionIntent.value = settings.intention || "";
-};
-
-const updateRing = (progress) => {
-  const angle = Math.max(0, Math.min(360, progress * 360));
-  const color = COLORS[sessions[activeIndex]?.type] || "#e9e9f5";
-  timerRing.style.background = `conic-gradient(${color} ${angle}deg, #e9e9f5 ${angle}deg 360deg)`;
-};
-
-const updateStatus = () => {
-  const current = sessions[activeIndex];
-  if (!current) {
-    currentSessionTitle.textContent = "Ready to focus";
-    sessionBadge.textContent = "Idle";
-    sessionBadge.className = "badge badge--neutral";
-    sessionMeta.textContent = "0 of 0 pomodoros";
-    timeRemaining.textContent = formatTime(
-      Number(focusDuration.value) * 60
-    );
-    updateRing(0);
-    nextSession.textContent = "Configure a flow to get started";
-    return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw);
+    return {
+      ratings: { ...base.ratings, ...(parsed.ratings || {}) },
+      notes: parsed.notes || {},
+    };
+  } catch {
+    return base;
   }
+}
 
-  const badgeClass =
-    current.type === "focus" ? "badge badge--focus" : "badge badge--break";
-  sessionBadge.className = badgeClass;
-  sessionBadge.textContent = current.type === "focus" ? "Focus" : "Break";
-  currentSessionTitle.textContent = current.title;
-  sessionMeta.textContent = `${current.cycle} of ${getSettings().pomodoros} pomodoros`;
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
 
-  const upcoming = sessions[activeIndex + 1];
-  if (upcoming) {
-    nextSession.textContent = `${upcoming.title} · ${formatClock(
-      new Date(upcoming.start)
-    )}`;
-  } else {
-    nextSession.textContent = "Flow complete. Celebrate the win!";
-  }
-};
+function pairKey(company, commitmentId) {
+  return `${company}|${commitmentId}`;
+}
 
-const updateCalendar = () => {
-  if (sessions.length === 0) {
-    calendarGrid.innerHTML =
-      "<p class=\"card__subtitle\">No sessions yet. Build a flow to see your calendar.</p>";
-    return;
-  }
+function scoreFromStatus(status) {
+  return statusLookup[status]?.score ?? 0;
+}
 
-  const grouped = sessions.reduce((acc, session) => {
-    const dayKey = session.start.split("T")[0];
-    if (!acc[dayKey]) acc[dayKey] = [];
-    acc[dayKey].push(session);
-    return acc;
-  }, {});
+function percent(value) {
+  return `${Math.round(value * 100)}%`;
+}
 
-  calendarGrid.innerHTML = Object.entries(grouped)
-    .map(([day, daySessions]) => {
-      const list = daySessions
-        .map((session) => {
-          const classes = [
-            "session-card",
-            session.type,
-            session.status === "completed" ? "completed" : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
+function fillSelectors() {
+  const companyOptions = ['<option value="all">All companies</option>']
+    .concat(companies.map((c) => `<option value="${c}">${c}</option>`))
+    .join("");
+  nodes.companyFilter.innerHTML = companyOptions;
+
+  nodes.detailCompany.innerHTML = companies
+    .map((c) => `<option value="${c}">${c}</option>`)
+    .join("");
+
+  nodes.detailCommitment.innerHTML = commitments
+    .map((c) => `<option value="${c.id}">${c.id} — ${c.title}</option>`)
+    .join("");
+
+  nodes.statusFilter.innerHTML += statuses
+    .map((s) => `<option value="${s.value}">${s.label}</option>`)
+    .join("");
+}
+
+function renderKpis() {
+  const ratings = Object.values(state.ratings);
+  const avg = ratings.reduce((sum, st) => sum + scoreFromStatus(st), 0) / ratings.length;
+  const assessed = ratings.filter((st) => st !== "not_assessed").length;
+
+  const worstCompany = companies
+    .map((company) => {
+      const vals = commitments.map((c) => scoreFromStatus(state.ratings[pairKey(company, c.id)]));
+      return { company, score: vals.reduce((a, b) => a + b, 0) / vals.length };
+    })
+    .sort((a, b) => a.score - b.score)[0];
+
+  const alerts = highRiskNotes();
+
+  nodes.kpis.innerHTML = `
+    <article class="kpi"><span>Overall compliance</span><strong>${percent(avg)}</strong></article>
+    <article class="kpi"><span>Assessed commitments</span><strong>${assessed}/${ratings.length}</strong></article>
+    <article class="kpi"><span>Lowest scoring company</span><strong>${worstCompany.company}</strong><small>${percent(worstCompany.score)}</small></article>
+    <article class="kpi"><span>Priority alerts</span><strong>${alerts.length}</strong></article>
+  `;
+}
+
+function renderMatrix() {
+  const companyFilter = nodes.companyFilter.value;
+  const statusFilter = nodes.statusFilter.value;
+  const commitmentFilter = nodes.commitmentFilter.value.trim().toLowerCase();
+  const visibleCompanies = companyFilter === "all" ? companies : [companyFilter];
+
+  const head = `
+    <thead>
+      <tr>
+        <th class="commitment-title">Commitment</th>
+        ${visibleCompanies.map((c) => `<th>${c}</th>`).join("")}
+      </tr>
+    </thead>
+  `;
+
+  const bodyRows = commitments
+    .filter((c) => !commitmentFilter || c.id.toLowerCase().includes(commitmentFilter))
+    .map((commitment) => {
+      const cells = visibleCompanies
+        .map((company) => {
+          const key = pairKey(company, commitment.id);
+          const current = state.ratings[key];
+          if (statusFilter !== "all" && current !== statusFilter) {
+            return "";
+          }
+
           return `
-            <div class="${classes}">
-              <div>
-                ${session.title}
-                <span>${formatClock(new Date(session.start))} - ${formatClock(
-                  new Date(session.end)
-                )}</span>
-              </div>
-              <span>${session.status}</span>
-            </div>
+            <td>
+              <select class="status-pill status-${current}" data-company="${company}" data-commitment="${commitment.id}">
+                ${statuses
+                  .map(
+                    (s) =>
+                      `<option value="${s.value}" ${current === s.value ? "selected" : ""}>${s.label}</option>`
+                  )
+                  .join("")}
+              </select>
+            </td>
           `;
         })
         .join("");
 
+      if (!cells.trim()) return "";
+
       return `
-        <div class="day">
-          <div class="day__header">
-            <strong>${formatDate(new Date(day))}</strong>
-            <span>${daySessions.length} sessions</span>
-          </div>
-          <div class="sessions">${list}</div>
-        </div>
+        <tr>
+          <th>
+            <strong>${commitment.id}</strong><br />
+            <small>${commitment.title}</small>
+          </th>
+          ${cells}
+        </tr>
       `;
     })
     .join("");
-};
 
-const updateCompletedCount = () => {
-  const today = new Date().toISOString().split("T")[0];
-  const completed = sessions.filter(
-    (session) =>
-      session.status === "completed" && session.start.startsWith(today)
-  );
-  completedCount.textContent = `${completed.length} sessions`;
-};
+  nodes.matrixTable.innerHTML = `${head}<tbody>${bodyRows || '<tr><td colspan="100">No rows match current filters.</td></tr>'}</tbody>`;
 
-const setRemainingForSession = (session) => {
-  const start = new Date(session.start);
-  const end = new Date(session.end);
-  const totalSeconds = (end - start) / 1000;
-  remainingSeconds = totalSeconds;
-  updateRing(1 - remainingSeconds / totalSeconds);
-  timeRemaining.textContent = formatTime(remainingSeconds);
-};
-
-const playSound = () => {
-  if (!soundToggle.checked) return;
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-  oscillator.type = "sine";
-  oscillator.frequency.value = 880;
-  gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(
-    0.001,
-    audioContext.currentTime + 1
-  );
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 1);
-};
-
-const persistSessions = () => {
-  saveStorage(STORAGE_KEYS.sessions, sessions);
-};
-
-const tick = () => {
-  if (isPaused) return;
-  const current = sessions[activeIndex];
-  if (!current) return;
-
-  remainingSeconds -= 1;
-  const totalSeconds =
-    (new Date(current.end) - new Date(current.start)) / 1000;
-  const progress = 1 - remainingSeconds / totalSeconds;
-  updateRing(progress);
-  timeRemaining.textContent = formatTime(remainingSeconds);
-
-  if (remainingSeconds <= 0) {
-    playSound();
-    sessions[activeIndex].status = "completed";
-    persistSessions();
-    updateCalendar();
-    updateCompletedCount();
-
-    activeIndex += 1;
-    const next = sessions[activeIndex];
-    if (next) {
-      next.status = "active";
-      setRemainingForSession(next);
-      updateStatus();
-      if (!autoStartToggle.checked) {
-        pauseTimer();
-      }
-    } else {
-      pauseTimer();
-      updateStatus();
-    }
-  }
-};
-
-const startTimer = () => {
-  if (sessions.length === 0) return;
-  if (!timerId) {
-    timerId = setInterval(tick, 1000);
-  }
-  isPaused = false;
-  pauseBtn.disabled = false;
-  startBtn.disabled = true;
-};
-
-const pauseTimer = () => {
-  isPaused = true;
-  pauseBtn.disabled = true;
-  startBtn.disabled = false;
-};
-
-const resetTimer = () => {
-  clearInterval(timerId);
-  timerId = null;
-  isPaused = true;
-  const flowStartIndex = [...sessions]
-    .slice(0, activeIndex + 1)
-    .map((session, index) => ({ session, index }))
-    .filter(({ session }) => session.type === "focus" && session.cycle === 1)
-    .map(({ index }) => index)
-    .pop();
-  const nextFlowStartIndex = sessions.findIndex(
-    (session, index) =>
-      index > flowStartIndex &&
-      session.type === "focus" &&
-      session.cycle === 1
-  );
-  const flowEndIndex =
-    nextFlowStartIndex === -1 ? sessions.length : nextFlowStartIndex;
-  activeIndex = flowStartIndex ?? 0;
-  sessions = sessions.map((session, index) => {
-    if (index < (flowStartIndex ?? 0) || index >= flowEndIndex) {
-      return session;
-    }
-    return {
-      ...session,
-      status: index === activeIndex ? "active" : "planned",
-    };
-  });
-  const first = sessions[activeIndex];
-  if (first) {
-    setRemainingForSession(first);
-  }
-  updateStatus();
-  persistSessions();
-  updateCalendar();
-  pauseBtn.disabled = true;
-  startBtn.disabled = false;
-};
-
-const buildNewFlow = () => {
-  const settings = getSettings();
-  saveStorage(STORAGE_KEYS.settings, settings);
-  const newFlow = buildFlow(settings, new Date()).map((session, index) => ({
-    ...session,
-    status: index === 0 ? "active" : "planned",
-  }));
-  sessions = sessions.map((session) =>
-    session.status === "active" ? { ...session, status: "completed" } : session
-  );
-  const startIndex = sessions.length;
-  sessions = [...sessions, ...newFlow];
-  activeIndex = startIndex;
-  setRemainingForSession(sessions[activeIndex]);
-  updateStatus();
-  updateCalendar();
-  updateCompletedCount();
-  persistSessions();
-};
-
-const renderTasks = (tasks) => {
-  taskList.innerHTML = "";
-  tasks.forEach((task) => {
-    const item = document.createElement("li");
-    item.className = "tasks__item";
-    item.innerHTML = `
-      <input type="checkbox" ${task.done ? "checked" : ""} />
-      <span>${task.label}</span>
-      <button class="btn btn--ghost" aria-label="Delete task">Remove</button>
-    `;
-    const checkbox = item.querySelector("input");
-    const removeBtn = item.querySelector("button");
-    checkbox.addEventListener("change", () => {
-      task.done = checkbox.checked;
-      saveStorage(STORAGE_KEYS.tasks, tasks);
+  nodes.matrixTable.querySelectorAll(".status-pill").forEach((select) => {
+    select.addEventListener("change", (event) => {
+      const company = event.target.dataset.company;
+      const commitmentId = event.target.dataset.commitment;
+      state.ratings[pairKey(company, commitmentId)] = event.target.value;
+      event.target.className = `status-pill status-${event.target.value}`;
+      saveState();
+      renderAll();
     });
-    removeBtn.addEventListener("click", () => {
-      const updated = tasks.filter((t) => t !== task);
-      saveStorage(STORAGE_KEYS.tasks, updated);
-      renderTasks(updated);
-    });
-    taskList.appendChild(item);
   });
-};
+}
 
-const renderPresets = (presets) => {
-  presetContainer.innerHTML = "";
-  presets.forEach((preset) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn";
-    button.textContent = preset.name;
-    button.addEventListener("click", () => {
-      applySettings(preset.settings);
-    });
-    presetContainer.appendChild(button);
-  });
-};
-
-const exportData = (format) => {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    settings: getSettings(),
-    sessions,
-    tasks: loadStorage(STORAGE_KEYS.tasks, []),
+function loadGapDetail() {
+  const key = pairKey(nodes.detailCompany.value, nodes.detailCommitment.value);
+  const note = state.notes[key] || {
+    severity: 0,
+    probability: 0,
+    evidence: "",
+    notes: "",
+    actions: "",
   };
 
-  if (format === "json") {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "pomodoro-data.json";
-    link.click();
-    URL.revokeObjectURL(url);
+  nodes.severity.value = note.severity;
+  nodes.probability.value = note.probability;
+  nodes.evidence.value = note.evidence;
+  nodes.gapNotes.value = note.notes;
+  nodes.nextActions.value = note.actions;
+}
+
+function highRiskNotes() {
+  return Object.entries(state.notes)
+    .map(([key, note]) => {
+      const [company, commitmentId] = key.split("|");
+      const risk = Number(note.severity || 0) * Number(note.probability || 0);
+      const rating = state.ratings[key] || "not_assessed";
+      return { company, commitmentId, risk, note, rating };
+    })
+    .filter((item) => item.risk >= 12 && item.rating !== "compliant")
+    .sort((a, b) => b.risk - a.risk);
+}
+
+function renderAlerts() {
+  const alerts = highRiskNotes();
+  if (!alerts.length) {
+    nodes.alerts.innerHTML = "<li>No high-risk unresolved gaps right now.</li>";
     return;
   }
 
-  const rows = [
-    ["title", "type", "start", "end", "status", "intention"],
-    ...sessions.map((session) => [
-      session.title,
-      session.type,
-      session.start,
-      session.end,
-      session.status,
-      session.intention || "",
-    ]),
-  ];
-  const csvContent = rows
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "pomodoro-sessions.csv";
-  link.click();
-  URL.revokeObjectURL(url);
-};
+  nodes.alerts.innerHTML = alerts
+    .map(
+      (a) => `
+      <li class="alert">
+        <strong>${a.company} — Commitment ${a.commitmentId}</strong>
+        <div>Risk score: ${a.risk} · Status: ${statusLookup[a.rating]?.label}</div>
+        <small>${a.note.notes || "No narrative provided yet."}</small>
+      </li>
+    `
+    )
+    .join("");
+}
 
-settingsForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  buildNewFlow();
-});
+function wireEvents() {
+  [nodes.companyFilter, nodes.statusFilter, nodes.commitmentFilter].forEach((el) => {
+    el.addEventListener("input", renderMatrix);
+  });
 
-startBtn.addEventListener("click", () => {
-  if (sessions.length === 0) {
-    buildNewFlow();
-  }
-  startTimer();
-});
+  [nodes.detailCompany, nodes.detailCommitment].forEach((el) => {
+    el.addEventListener("change", loadGapDetail);
+  });
 
-pauseBtn.addEventListener("click", () => {
-  pauseTimer();
-});
+  nodes.gapForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const key = pairKey(nodes.detailCompany.value, nodes.detailCommitment.value);
+    state.notes[key] = {
+      severity: Number(nodes.severity.value),
+      probability: Number(nodes.probability.value),
+      evidence: nodes.evidence.value.trim(),
+      notes: nodes.gapNotes.value.trim(),
+      actions: nodes.nextActions.value.trim(),
+    };
+    saveState();
+    renderKpis();
+    renderAlerts();
+  });
 
-resetBtn.addEventListener("click", () => {
-  resetTimer();
-});
+  nodes.exportBtn.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "eu-cop-watchdog-export.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
-savePresetBtn.addEventListener("click", () => {
-  const presets = loadStorage(STORAGE_KEYS.presets, []);
-  const settings = getSettings();
-  const name = `Preset ${presets.length + 1} · ${settings.focusMinutes}m`;
-  const updated = [...presets, { name, settings }];
-  saveStorage(STORAGE_KEYS.presets, updated);
-  renderPresets(updated);
-});
+  nodes.importInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-taskForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = taskInput.value.trim();
-  if (!value) return;
-  const tasks = loadStorage(STORAGE_KEYS.tasks, []);
-  const updated = [...tasks, { label: value, done: false }];
-  saveStorage(STORAGE_KEYS.tasks, updated);
-  taskInput.value = "";
-  renderTasks(updated);
-});
-
-exportJsonBtn.addEventListener("click", () => exportData("json"));
-exportCsvBtn.addEventListener("click", () => exportData("csv"));
-
-clearHistoryBtn.addEventListener("click", () => {
-  clearInterval(timerId);
-  timerId = null;
-  isPaused = true;
-  sessions = [];
-  persistSessions();
-  updateCalendar();
-  updateCompletedCount();
-  updateStatus();
-});
-
-const init = () => {
-  const storedSettings = loadStorage(STORAGE_KEYS.settings, defaultSettings);
-  applySettings(storedSettings);
-
-  sessions = loadStorage(STORAGE_KEYS.sessions, []);
-  if (sessions.length > 0) {
-    activeIndex = sessions.findIndex((session) => session.status === "active");
-    if (activeIndex === -1) {
-      activeIndex = sessions.findIndex(
-        (session) => session.status === "planned"
-      );
+    try {
+      const text = await file.text();
+      const incoming = JSON.parse(text);
+      state.ratings = { ...state.ratings, ...(incoming.ratings || {}) };
+      state.notes = incoming.notes || {};
+      saveState();
+      renderAll();
+      loadGapDetail();
+    } catch {
+      alert("Invalid JSON file.");
     }
-    if (activeIndex === -1) activeIndex = 0;
-    const current = sessions[activeIndex];
-    if (current) {
-      const end = new Date(current.end);
-      const start = new Date(current.start);
-      const now = new Date();
-      const totalSeconds = Math.max(0, (end - start) / 1000);
-      remainingSeconds = Math.max(0, (end - now) / 1000);
-      if (remainingSeconds === 0) {
-        current.status = "completed";
-      }
-      timeRemaining.textContent = formatTime(remainingSeconds || 0);
-      updateRing(totalSeconds ? 1 - remainingSeconds / totalSeconds : 0);
-    }
-  }
 
-  updateStatus();
-  updateCalendar();
-  updateCompletedCount();
+    event.target.value = "";
+  });
 
-  renderTasks(loadStorage(STORAGE_KEYS.tasks, []));
-  renderPresets(loadStorage(STORAGE_KEYS.presets, []));
-};
+  nodes.resetBtn.addEventListener("click", () => {
+    if (!confirm("Reset all local compliance data?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.reload();
+  });
+}
 
-init();
+function renderAll() {
+  renderKpis();
+  renderMatrix();
+  renderAlerts();
+}
+
+fillSelectors();
+wireEvents();
+renderAll();
+loadGapDetail();
